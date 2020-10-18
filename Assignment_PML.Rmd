@@ -1,0 +1,156 @@
+---
+title: "pml_assignment"
+author: "Grissel Priyanka Mathias"
+date: "10/18/2020"
+output: html_document
+---
+#Introduction
+
+To collect all out physical activity with ease we use fitness band. We collect data from accelometers of total of 6 people. They do the lifts in 5 correct and incorrect way. This is a part of week 4 practical machine learning peer graded assignment.
+
+#libraries
+
+```{r warning=FALSE, error=FALSE}
+library(rattle)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(RColorBrewer)
+library(xgboost)
+library(dplyr)
+```
+
+# Data Extraction
+
+```{r}
+d_directory = "./data"
+trainingURL = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testingURL = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+TrainFile = "pml-training.csv"
+TestFile = "pml-Testing.csv"
+if (!file.exists(d_directory)) {
+  dir.create(d_directory)
+}
+if (!file.exists(file.path(d_directory, TrainFile))) {
+  download.file(trainingURL, destfile=file.path(d_directory, TrainFile))
+}
+if (!file.exists(file.path(d_directory, TestFile))) {
+  download.file(testingURL, destfile=file.path(d_directory, TestFile))
+}
+```
+
+# Reading Data
+
+```{r}
+train <- read.csv(file.path(d_directory, TrainFile))
+Testing <- read.csv(file.path(d_directory, TestFile))
+dim(train)
+dim(Testing)
+head(train)
+```
+
+# Cleaning Data
+
+
+```{r}
+sum(complete.cases(train))
+```
+
+# Eliminate NA columns
+
+```{r}
+colnames(train)
+plot(colMeans(is.na(train)))
+```
+
+```{r}
+TrainingClass = train$classe
+Train_Raw = train[, sapply(train, is.numeric)]
+Test_Raw = Testing[, sapply(Testing, is.numeric)]
+```
+
+Removing columns with NA values
+
+```{r}
+TrainingFilers <- Train_Raw[, colSums(is.na(Train_Raw)) == 0]
+TrainingFilers$classe = TrainingClass
+TestingFilers <- Test_Raw[, colSums(is.na(Test_Raw)) == 0]
+```
+
+```{r}
+dim(TrainingFilers)
+dim(TestingFilers)
+```
+
+```{r}
+trash = !grepl("X|timestamp", colnames(TrainingFilers))
+Col = colnames(TrainingFilers)[trash]
+TrainingFilers = TrainingFilers %>%
+  select(Col)
+trash = !grepl("X|timestamp", colnames(TestingFilers))
+Col = colnames(TestingFilers)[trash]
+TestingFilers = TestingFilers %>%
+  select(Col)
+```
+
+```{r}
+dim(TrainingFilers)
+dim(TestingFilers)
+```
+
+```{r}
+set.seed(12022018) # Today's date
+inTraining <- createDataPartition(TrainingFilers$classe, p=0.70, list=F)
+Training_Data <- TrainingFilers[inTraining, ]
+Val_Data <- TrainingFilers[-inTraining, ]
+dim(Training_Data)
+```
+
+#RandomForest Data Model
+
+```{r}
+ConRF <- trainControl(method="cv", 5, allowParallel = TRUE)
+RFModel <- train(classe ~ ., data=Training_Data, method="rf", trControl=ConRF, ntree=250)
+RFModel
+```
+
+```{r}
+RF_Pre <- predict(RFModel, Val_Data)
+confusionMatrix(Val_Data$classe, RF_Pre)
+```
+
+```{r}
+xgb_Control <- trainControl(method="cv", 5, allowParallel = TRUE)
+xgb_Model <- train(classe ~ ., data=Training_Data, method="xgbTree", trControl=xgb_Control)
+```
+
+```{r}
+xgb_Model
+```
+
+#Validation performance data set
+
+```{r}
+xgb_Pre <- predict(xgb_Model, Val_Data)
+confusionMatrix(Val_Data$classe, xgb_Pre)
+```
+
+# Comparing
+
+```{r}
+
+ModelR <- resamples(list(RF=RFModel, XGB=xgb_Model))
+summary(ModelR)
+bwplot(ModelR)
+dotplot(ModelR)
+```
+
+```{r}
+RFRes <- predict(RFModel, TestingFilers[, -length(names(TestingFilers))])
+xgbRes <- predict(xgb_Model, TestingFilers[, -length(names(TestingFilers))])
+RFRes
+xgbRes
+confusionMatrix(RFRes, xgbRes)
+```
